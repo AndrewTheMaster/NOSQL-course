@@ -1,15 +1,16 @@
 package main
 
-import {
+import (
 	"encoding/json"
 	"log"
 	"net/http"
 	"os"
-}
+)
 
 type HealthCheckResponse struct {
 	Status string `json:"status"`
 }
+
 func main() {
 	port := os.Getenv("APP_PORT")
 	if port == "" {
@@ -32,5 +33,5 @@ func healthCheckHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
-	json.NewEncoder(w).Encode(HealthCheckResponse(Status: "ok"))
+	json.NewEncoder(w).Encode(HealthCheckResponse{Status: "ok"})
 }

@@ -1,9 +1,9 @@
-FROM golang:1.21 as builder
+FROM golang:1.25.1 as builder
 
 WORKDIR /app
 COPY . .
 
-RUN go mod init myapp && go mod tidy
+
 RUN CGO_ENABLED=0 GOOS=linux go build -o /app/bin/app ./cmd/app
 
 FROM alpine:latest
