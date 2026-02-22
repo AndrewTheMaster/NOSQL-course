@@ -14,7 +14,7 @@ type HealthCheckResponse struct {
 func main() {
 	port := os.Getenv("APP_PORT")
 	if port == "" {
-		port = "8080"
+		log.Fatal("APP_PORT environment variable is required")
 	}
 
 	http.HandleFunc("/health", healthCheckHandler)

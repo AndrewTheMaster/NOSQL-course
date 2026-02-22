@@ -9,7 +9,7 @@ services:
     restart: unless-stopped
     env_file: .env.local
     ports:
-      - "${APP_PORT}:${APP_PORT}"
+      - "0.0.0.0:${APP_PORT}:${APP_PORT}" 
     networks:
       - app_network
 
