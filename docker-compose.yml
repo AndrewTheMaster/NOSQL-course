@@ -1,0 +1,18 @@
+version: "3.8"
+
+services:
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: go_app
+    restart: unless-stopped
+    env_file: .env.local
+    ports:
+      - "0.0.0.0:${APP_PORT}:${APP_PORT}" 
+    networks:
+      - app_network
+
+networks:
+  app_network:
+    driver: bridge
