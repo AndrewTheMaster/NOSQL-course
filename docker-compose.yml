@@ -18,8 +18,11 @@ services:
     image: redis:7-alpine
     container_name: redis
     restart: unless-stopped
+    command: redis-server --port ${REDIS_PORT}
+    ports:
+      - "${REDIS_PORT}:${REDIS_PORT}"
     healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
+      test: ["CMD", "redis-cli", "-p", "${REDIS_PORT}", "ping"]
       interval: 2s
       timeout: 3s
       retries: 5
