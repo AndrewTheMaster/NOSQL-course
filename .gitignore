@@ -37,6 +37,7 @@ Thumbs.db
 *.log
 tmp/
 logs/
+cookies.txt
 
 # ============================================
 # Docker
@@ -48,6 +49,7 @@ docker-compose.override.yml
 # ============================================
 
 # Go
+/app
 *.exe
 *.exe~
 *.dll
