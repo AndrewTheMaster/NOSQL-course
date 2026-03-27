@@ -77,7 +77,15 @@ func authLogoutHandler(w http.ResponseWriter, r *http.Request) {
 
 	cookie, err := r.Cookie(sessionCookieName)
 	if err != nil || !isValidSessionID(cookie.Value) {
-		w.WriteHeader(http.StatusNoContent)
+		w.WriteHeader(http.StatusUnauthorized)
+		return
+	}
+
+	// Проверяем, существует ли сессия в Redis
+	userID, err := getSessionUserID(ctx, cookie.Value)
+	if err != nil || userID == "" {
+		// Сессия не найдена или user_id не привязан — пользователь не авторизован
+		w.WriteHeader(http.StatusUnauthorized)
 		return
 	}
 
