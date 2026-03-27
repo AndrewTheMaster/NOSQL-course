@@ -7,9 +7,11 @@ services:
     restart: unless-stopped
     env_file: .env.local
     ports:
-      - "0.0.0.0:${APP_PORT}:${APP_PORT}"
+      - "${APP_PORT}:${APP_PORT}"
     depends_on:
       redis:
+        condition: service_healthy
+      mongodb:
         condition: service_healthy
     networks:
       - app_network
@@ -26,6 +28,24 @@ services:
       interval: 2s
       timeout: 3s
       retries: 5
+    networks:
+      - app_network
+
+  mongodb:
+    image: mongo:7
+    container_name: mongodb
+    restart: unless-stopped
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: ${MONGODB_USER}
+      MONGO_INITDB_ROOT_PASSWORD: ${MONGODB_PASSWORD}
+      MONGO_INITDB_DATABASE: ${MONGODB_DATABASE}
+    ports:
+      - "${MONGODB_PORT}:27017"
+    healthcheck:
+      test: ["CMD", "mongosh", "--quiet", "--eval", "db.adminCommand('ping').ok"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
     networks:
       - app_network
 
