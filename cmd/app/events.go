@@ -249,7 +249,7 @@ func getEventByIDHandler(w http.ResponseWriter, r *http.Request, idStr string) {
 	writeJSON(w, http.StatusOK, er)
 }
 
-func postEventReactionHandler(w http.ResponseWriter, r *http.Request, idStr string, value int, clearCookieOn401 bool) {
+func postEventReactionHandler(w http.ResponseWriter, r *http.Request, idStr string, value int8, clearCookieOn401 bool) {
 	ctx := r.Context()
 
 	cookie, err := r.Cookie(sessionCookieName)
