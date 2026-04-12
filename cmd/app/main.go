@@ -76,10 +76,12 @@ func main() {
 	// Routes
 	http.HandleFunc("/health", healthHandler)
 	http.HandleFunc("/session", sessionHandler)
-	http.HandleFunc("/users", usersHandler)
+	http.HandleFunc("/users/", usersSubHandler)
+	http.HandleFunc("/users", usersRootHandler)
 	http.HandleFunc("/auth/login", authLoginHandler)
 	http.HandleFunc("/auth/logout", authLogoutHandler)
-	http.HandleFunc("/events", eventsHandler)
+	http.HandleFunc("/events/", eventsByIDHandler)
+	http.HandleFunc("/events", eventsRootHandler)
 
 	addr := ":" + port
 	log.Printf("Server starting on %s", addr)

@@ -13,6 +13,8 @@ services:
         condition: service_healthy
       mongodb:
         condition: service_healthy
+      mongo-shard-setup:
+        condition: service_completed_successfully
     networks:
       - app_network
 
@@ -31,22 +33,125 @@ services:
     networks:
       - app_network
 
+  mongo-config:
+    image: mongo:7
+    container_name: mongo-config
+    command: ["mongod", "--configsvr", "--replSet", "cfg", "--bind_ip_all", "--port", "27017"]
+    volumes:
+      - mongo_config_data:/data/db
+    networks:
+      - app_network
+
+  shard1-1:
+    image: mongo:7
+    container_name: shard1-1
+    command: ["mongod", "--shardsvr", "--replSet", "shard1", "--bind_ip_all", "--port", "27017"]
+    volumes:
+      - shard1_1_data:/data/db
+    networks:
+      - app_network
+
+  shard1-2:
+    image: mongo:7
+    container_name: shard1-2
+    command: ["mongod", "--shardsvr", "--replSet", "shard1", "--bind_ip_all", "--port", "27017"]
+    volumes:
+      - shard1_2_data:/data/db
+    networks:
+      - app_network
+
+  shard1-3:
+    image: mongo:7
+    container_name: shard1-3
+    command: ["mongod", "--shardsvr", "--replSet", "shard1", "--bind_ip_all", "--port", "27017"]
+    volumes:
+      - shard1_3_data:/data/db
+    networks:
+      - app_network
+
+  shard2-1:
+    image: mongo:7
+    container_name: shard2-1
+    command: ["mongod", "--shardsvr", "--replSet", "shard2", "--bind_ip_all", "--port", "27017"]
+    volumes:
+      - shard2_1_data:/data/db
+    networks:
+      - app_network
+
+  shard2-2:
+    image: mongo:7
+    container_name: shard2-2
+    command: ["mongod", "--shardsvr", "--replSet", "shard2", "--bind_ip_all", "--port", "27017"]
+    volumes:
+      - shard2_2_data:/data/db
+    networks:
+      - app_network
+
+  shard2-3:
+    image: mongo:7
+    container_name: shard2-3
+    command: ["mongod", "--shardsvr", "--replSet", "shard2", "--bind_ip_all", "--port", "27017"]
+    volumes:
+      - shard2_3_data:/data/db
+    networks:
+      - app_network
+
+  mongo-rs-init:
+    image: mongo:7
+    container_name: mongo-rs-init
+    depends_on:
+      - mongo-config
+      - shard1-1
+      - shard1-2
+      - shard1-3
+      - shard2-1
+      - shard2-2
+      - shard2-3
+    volumes:
+      - ./scripts/mongo-rs-init.sh:/scripts/mongo-rs-init.sh:ro
+    entrypoint: ["/bin/bash", "/scripts/mongo-rs-init.sh"]
+    networks:
+      - app_network
+
   mongodb:
     image: mongo:7
     container_name: mongodb
-    restart: unless-stopped
-    environment:
-      MONGO_INITDB_DATABASE: ${MONGODB_DATABASE}
+    command: ["mongos", "--configdb", "cfg/mongo-config:27017", "--bind_ip_all", "--port", "27017"]
+    depends_on:
+      mongo-rs-init:
+        condition: service_completed_successfully
     ports:
       - "${MONGODB_PORT}:27017"
     healthcheck:
       test: ["CMD", "mongosh", "--quiet", "--eval", "db.adminCommand('ping').ok"]
       interval: 5s
       timeout: 5s
-      retries: 10
+      retries: 20
+      start_period: 30s
+    networks:
+      - app_network
+
+  mongo-shard-setup:
+    image: mongo:7
+    container_name: mongo-shard-setup
+    depends_on:
+      mongodb:
+        condition: service_healthy
+    volumes:
+      - ./scripts/mongo-shard-setup.sh:/scripts/mongo-shard-setup.sh:ro
+    entrypoint: ["/bin/bash", "/scripts/mongo-shard-setup.sh"]
     networks:
       - app_network
 
 networks:
   app_network:
     driver: bridge
+
+volumes:
+  mongo_config_data:
+  shard1_1_data:
+  shard1_2_data:
+  shard1_3_data:
+  shard2_1_data:
+  shard2_2_data:
+  shard2_3_data:

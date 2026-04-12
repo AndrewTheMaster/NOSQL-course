@@ -1,9 +1,12 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
+	"net/url"
 	"strconv"
+	"strings"
 	"time"
 
 	"go.mongodb.org/mongo-driver/bson"
@@ -11,6 +14,14 @@ import (
 	"go.mongodb.org/mongo-driver/mongo"
 	"go.mongodb.org/mongo-driver/mongo/options"
 )
+
+var eventCategories = map[string]struct{}{
+	"meetup":     {},
+	"concert":    {},
+	"exhibition": {},
+	"party":      {},
+	"other":      {},
+}
 
 type createEventRequest struct {
 	Title       string `json:"title"`
@@ -23,6 +34,8 @@ type createEventRequest struct {
 type eventResponse struct {
 	ID          string        `json:"id"`
 	Title       string        `json:"title"`
+	Category    string        `json:"category"`
+	Price       uint64        `json:"price"`
 	Description string        `json:"description"`
 	Location    EventLocation `json:"location"`
 	CreatedAt   string        `json:"created_at"`
@@ -31,8 +44,27 @@ type eventResponse struct {
 	FinishedAt  string        `json:"finished_at"`
 }
 
+func eventToResponse(e Event) eventResponse {
+	cat := e.Category
+	if cat == "" {
+		cat = "other"
+	}
+	return eventResponse{
+		ID:          e.ID.Hex(),
+		Title:       e.Title,
+		Category:    cat,
+		Price:       e.Price,
+		Description: e.Description,
+		Location:    e.Location,
+		CreatedAt:   e.CreatedAt,
+		CreatedBy:   e.CreatedBy,
+		StartedAt:   e.StartedAt,
+		FinishedAt:  e.FinishedAt,
+	}
+}
+
 // GET /events и POST /events
-func eventsHandler(w http.ResponseWriter, r *http.Request) {
+func eventsRootHandler(w http.ResponseWriter, r *http.Request) {
 	switch r.Method {
 	case http.MethodGet:
 		listEventsHandler(w, r)
@@ -43,11 +75,28 @@ func eventsHandler(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+// GET/PATCH /events/{id}
+func eventsByIDHandler(w http.ResponseWriter, r *http.Request) {
+	id := strings.TrimPrefix(r.URL.Path, "/events/")
+	id = strings.Trim(id, "/")
+	if id == "" || strings.Contains(id, "/") {
+		http.NotFound(w, r)
+		return
+	}
+	switch r.Method {
+	case http.MethodGet:
+		getEventByIDHandler(w, r, id)
+	case http.MethodPatch:
+		patchEventHandler(w, r, id)
+	default:
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+	}
+}
+
 // POST /events — создание события (только для авторизованных)
 func createEventHandler(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 
-	// Проверяем сессию и авторизацию
 	cookie, err := r.Cookie(sessionCookieName)
 	if err != nil || !isValidSessionID(cookie.Value) {
 		w.WriteHeader(http.StatusUnauthorized)
@@ -60,49 +109,49 @@ func createEventHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if userID == "" {
-		// Сессия есть, но user_id нет — обновляем TTL и возвращаем 401
 		refreshExistingSession(ctx, w, r)
 		w.WriteHeader(http.StatusUnauthorized)
 		return
 	}
 
-	// Пользователь авторизован — сразу обновляем TTL
 	refreshExistingSession(ctx, w, r)
 
 	var req createEventRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"message": `invalid "title" field`})
+		writeJSON(w, http.StatusBadRequest, invalidFieldMessage("title"))
 		return
 	}
 
 	if req.Title == "" {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"message": `invalid "title" field`})
+		writeJSON(w, http.StatusBadRequest, invalidFieldMessage("title"))
 		return
 	}
 	if req.Address == "" {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"message": `invalid "address" field`})
+		writeJSON(w, http.StatusBadRequest, invalidFieldMessage("address"))
 		return
 	}
 	if req.StartedAt == "" {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"message": `invalid "started_at" field`})
+		writeJSON(w, http.StatusBadRequest, invalidFieldMessage("started_at"))
 		return
 	}
 	if _, err := time.Parse(time.RFC3339, req.StartedAt); err != nil {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"message": `invalid "started_at" field`})
+		writeJSON(w, http.StatusBadRequest, invalidFieldMessage("started_at"))
 		return
 	}
 	if req.FinishedAt == "" {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"message": `invalid "finished_at" field`})
+		writeJSON(w, http.StatusBadRequest, invalidFieldMessage("finished_at"))
 		return
 	}
 	if _, err := time.Parse(time.RFC3339, req.FinishedAt); err != nil {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"message": `invalid "finished_at" field`})
+		writeJSON(w, http.StatusBadRequest, invalidFieldMessage("finished_at"))
 		return
 	}
 
 	event := Event{
 		Title:       req.Title,
 		Description: req.Description,
+		Category:    "other",
+		Price:       0,
 		Location:    EventLocation{Address: req.Address},
 		CreatedAt:   time.Now().Format(time.RFC3339),
 		CreatedBy:   userID,
@@ -125,49 +174,191 @@ func createEventHandler(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusCreated, map[string]string{"id": eventID})
 }
 
+func getEventByIDHandler(w http.ResponseWriter, r *http.Request, idStr string) {
+	ctx := r.Context()
+	touchSessionCookie(w, r)
+
+	oid, err := primitive.ObjectIDFromHex(idStr)
+	if err != nil {
+		writeJSON(w, http.StatusNotFound, map[string]string{"message": "Not found"})
+		return
+	}
+
+	var ev Event
+	err = mongoDB.Collection("events").FindOne(ctx, bson.M{"_id": oid}).Decode(&ev)
+	if err != nil {
+		if err == mongo.ErrNoDocuments {
+			writeJSON(w, http.StatusNotFound, map[string]string{"message": "Not found"})
+			return
+		}
+		http.Error(w, "Internal server error", http.StatusInternalServerError)
+		return
+	}
+
+	writeJSON(w, http.StatusOK, eventToResponse(ev))
+}
+
+func patchEventHandler(w http.ResponseWriter, r *http.Request, idStr string) {
+	ctx := r.Context()
+
+	cookie, err := r.Cookie(sessionCookieName)
+	if err != nil || !isValidSessionID(cookie.Value) {
+		w.WriteHeader(http.StatusUnauthorized)
+		return
+	}
+
+	userID, err := getSessionUserID(ctx, cookie.Value)
+	if err != nil {
+		http.Error(w, "Internal server error", http.StatusInternalServerError)
+		return
+	}
+	if userID == "" {
+		refreshExistingSession(ctx, w, r)
+		w.WriteHeader(http.StatusUnauthorized)
+		return
+	}
+
+	refreshExistingSession(ctx, w, r)
+
+	raw, err := decodeJSONMap(r)
+	if err != nil {
+		writeJSON(w, http.StatusBadRequest, invalidFieldMessage("category"))
+		return
+	}
+
+	var categoryPtr *string
+	var pricePtr *uint64
+	var cityPtr *string
+
+	if rawMsg, ok := raw["category"]; ok {
+		var s string
+		if err := json.Unmarshal(rawMsg, &s); err != nil {
+			writeJSON(w, http.StatusBadRequest, invalidFieldMessage("category"))
+			return
+		}
+		if _, ok := eventCategories[s]; !ok {
+			writeJSON(w, http.StatusBadRequest, invalidFieldMessage("category"))
+			return
+		}
+		categoryPtr = &s
+	}
+	if rawMsg, ok := raw["price"]; ok {
+		var n uint64
+		if err := json.Unmarshal(rawMsg, &n); err != nil {
+			writeJSON(w, http.StatusBadRequest, invalidFieldMessage("price"))
+			return
+		}
+		pricePtr = &n
+	}
+	if rawMsg, ok := raw["city"]; ok {
+		var s string
+		if err := json.Unmarshal(rawMsg, &s); err != nil {
+			writeJSON(w, http.StatusBadRequest, invalidFieldMessage("city"))
+			return
+		}
+		cityPtr = &s
+	}
+
+	if categoryPtr == nil && pricePtr == nil && cityPtr == nil {
+		w.WriteHeader(http.StatusNoContent)
+		return
+	}
+
+	oid, err := primitive.ObjectIDFromHex(idStr)
+	if err != nil {
+		writeJSON(w, http.StatusNotFound, map[string]string{
+			"message": "Not found. Be sure that event exists and you are the organizer",
+		})
+		return
+	}
+
+	var existing Event
+	err = mongoDB.Collection("events").FindOne(ctx, bson.M{"_id": oid}).Decode(&existing)
+	if err != nil {
+		if err == mongo.ErrNoDocuments {
+			writeJSON(w, http.StatusNotFound, map[string]string{
+				"message": "Not found. Be sure that event exists and you are the organizer",
+			})
+			return
+		}
+		http.Error(w, "Internal server error", http.StatusInternalServerError)
+		return
+	}
+
+	if existing.CreatedBy != userID {
+		writeJSON(w, http.StatusNotFound, map[string]string{
+			"message": "Not found. Be sure that event exists and you are the organizer",
+		})
+		return
+	}
+
+	setDoc := bson.M{}
+	unsetDoc := bson.M{}
+	if categoryPtr != nil {
+		setDoc["category"] = *categoryPtr
+	}
+	if pricePtr != nil {
+		setDoc["price"] = *pricePtr
+	}
+	if cityPtr != nil {
+		if *cityPtr == "" {
+			unsetDoc["location.city"] = ""
+		} else {
+			setDoc["location.city"] = *cityPtr
+		}
+	}
+
+	update := bson.M{}
+	if len(setDoc) > 0 {
+		update["$set"] = setDoc
+	}
+	if len(unsetDoc) > 0 {
+		update["$unset"] = unsetDoc
+	}
+
+	_, err = mongoDB.Collection("events").UpdateOne(ctx, bson.M{"_id": oid}, update)
+	if err != nil {
+		http.Error(w, "Internal server error", http.StatusInternalServerError)
+		return
+	}
+
+	w.WriteHeader(http.StatusNoContent)
+}
+
 // GET /events — список событий с фильтрацией и пагинацией
 func listEventsHandler(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
-
-	// GET — только возвращаем существующую куку, без обновления TTL
-	if cookie, err := r.Cookie(sessionCookieName); err == nil {
-		http.SetCookie(w, &http.Cookie{
-			Name:     sessionCookieName,
-			Value:    cookie.Value,
-			Path:     "/",
-			HttpOnly: true,
-			MaxAge:   sessionTTLSeconds,
-		})
-	}
+	touchSessionCookie(w, r)
 
 	q := r.URL.Query()
 
-	var limit, offset int
+	filter, err := buildEventListFilter(ctx, q, "")
+	if err != nil {
+		writeJSON(w, http.StatusBadRequest, invalidFieldMessage(err.Error()))
+		return
+	}
+
+	var limit, offset int64
 	if v := q.Get("limit"); v != "" {
-		n, err := strconv.Atoi(v)
+		n, err := strconv.ParseInt(v, 10, 64)
 		if err != nil || n < 0 {
-			writeJSON(w, http.StatusBadRequest, map[string]string{"message": `invalid "limit" parameter`})
+			writeJSON(w, http.StatusBadRequest, invalidFieldMessage("limit"))
 			return
 		}
 		limit = n
 	}
 	if v := q.Get("offset"); v != "" {
-		n, err := strconv.Atoi(v)
+		n, err := strconv.ParseInt(v, 10, 64)
 		if err != nil || n < 0 {
-			writeJSON(w, http.StatusBadRequest, map[string]string{"message": `invalid "offset" parameter`})
+			writeJSON(w, http.StatusBadRequest, invalidFieldMessage("offset"))
 			return
 		}
 		offset = n
 	}
 
-	filter := bson.M{}
-	if title := q.Get("title"); title != "" {
-		filter["title"] = bson.M{"$regex": title, "$options": "i"}
-	}
-
-	findOpts := options.Find().SetSkip(int64(offset))
+	findOpts := options.Find().SetSkip(offset)
 	if limit > 0 {
-		findOpts.SetLimit(int64(limit))
+		findOpts.SetLimit(limit)
 	}
 
 	eventsCol := mongoDB.Collection("events")
@@ -192,18 +383,141 @@ func listEventsHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	for _, e := range events {
-		resp.Events = append(resp.Events, eventResponse{
-			ID:          e.ID.Hex(),
-			Title:       e.Title,
-			Description: e.Description,
-			Location:    e.Location,
-			CreatedAt:   e.CreatedAt,
-			CreatedBy:   e.CreatedBy,
-			StartedAt:   e.StartedAt,
-			FinishedAt:  e.FinishedAt,
-		})
+		resp.Events = append(resp.Events, eventToResponse(e))
 	}
 	resp.Count = len(resp.Events)
 
 	writeJSON(w, http.StatusOK, resp)
+}
+
+func buildEventListFilter(ctx context.Context, q url.Values, fixedCreatedBy string) (bson.M, error) {
+	get := q.Get
+
+	filter := bson.M{}
+
+	if v := get("id"); v != "" {
+		oid, err := primitive.ObjectIDFromHex(v)
+		if err != nil {
+			return nil, errField("id")
+		}
+		filter["_id"] = oid
+	}
+
+	if v := get("title"); v != "" {
+		filter["title"] = bson.M{"$regex": v, "$options": "i"}
+	}
+
+	if v := get("category"); v != "" {
+		if _, ok := eventCategories[v]; !ok {
+			return nil, errField("category")
+		}
+		filter["category"] = v
+	}
+
+	priceRange := bson.M{}
+	if v := get("price_from"); v != "" {
+		n, err := strconv.ParseUint(v, 10, 64)
+		if err != nil {
+			return nil, errField("price_from")
+		}
+		priceRange["$gte"] = n
+	}
+	if v := get("price_to"); v != "" {
+		n, err := strconv.ParseUint(v, 10, 64)
+		if err != nil {
+			return nil, errField("price_to")
+		}
+		priceRange["$lte"] = n
+	}
+	if len(priceRange) > 0 {
+		filter["price"] = priceRange
+	}
+
+	if v := get("city"); v != "" {
+		filter["location.city"] = v
+	}
+
+	if v := get("address"); v != "" {
+		filter["location.address"] = v
+	}
+
+	if fixedCreatedBy != "" {
+		filter["created_by"] = fixedCreatedBy
+	} else {
+		if v := get("user_id"); v != "" {
+			if _, err := primitive.ObjectIDFromHex(v); err != nil {
+				return nil, errField("user_id")
+			}
+			filter["created_by"] = v
+		} else if v := get("user"); v != "" {
+			var u User
+			err := mongoDB.Collection("users").FindOne(ctx, bson.M{"username": v}).Decode(&u)
+			if err != nil {
+				if err == mongo.ErrNoDocuments {
+					filter["created_by"] = bson.M{"$in": bson.A{}}
+				} else {
+					return nil, errField("user")
+				}
+			} else {
+				filter["created_by"] = u.ID.Hex()
+			}
+		}
+	}
+
+	df, dt := get("date_from"), get("date_to")
+	if df != "" || dt != "" {
+		var startBound time.Time
+		var endExclusive time.Time
+		var hasStart, hasEnd bool
+
+		if df != "" {
+			t, err := parseYYYYMMDDStrict(df)
+			if err != nil {
+				return nil, errField("date_from")
+			}
+			startBound = t
+			hasStart = true
+		}
+		if dt != "" {
+			t, err := parseYYYYMMDDStrict(dt)
+			if err != nil {
+				return nil, errField("date_to")
+			}
+			endExclusive = t.Add(24 * time.Hour)
+			hasEnd = true
+		}
+		if hasStart && hasEnd && !startBound.Before(endExclusive) {
+			return nil, errField("date_to")
+		}
+
+		started := bson.M{"$dateFromString": bson.M{"dateString": "$started_at"}}
+		var parts bson.A
+		if hasStart {
+			parts = append(parts, bson.M{"$gte": bson.A{started, startBound}})
+		}
+		if hasEnd {
+			parts = append(parts, bson.M{"$lt": bson.A{started, endExclusive}})
+		}
+		switch len(parts) {
+		case 1:
+			filter["$expr"] = parts[0]
+		case 2:
+			filter["$expr"] = bson.M{"$and": parts}
+		}
+	}
+
+	return filter, nil
+}
+
+type fieldError string
+
+func (e fieldError) Error() string { return string(e) }
+
+func errField(name string) fieldError { return fieldError(name) }
+
+func parseYYYYMMDDStrict(s string) (time.Time, error) {
+	if len(s) != 8 {
+		return time.Time{}, errField("date")
+	}
+	return time.ParseInLocation("20060102", s, time.UTC)
 }
