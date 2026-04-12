@@ -49,13 +49,9 @@ func ensureIndexes(ctx context.Context) error {
 
 	eventsCol := mongoDB.Collection("events")
 	_, err = eventsCol.Indexes().CreateMany(ctx, []mongo.IndexModel{
-		{
-			Keys: bson.D{
-				{Key: "created_by", Value: 1},
-				{Key: "title", Value: 1},
-			},
-			Options: options.Index().SetUnique(true),
-		},
+		{Keys: bson.D{{Key: "title", Value: 1}}},
+		{Keys: bson.D{{Key: "created_by", Value: 1}}},
+		{Keys: bson.D{{Key: "title", Value: 1}, {Key: "created_by", Value: 1}}},
 	})
 	if err != nil {
 		return err

@@ -160,6 +160,17 @@ func createEventHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	eventsCol := mongoDB.Collection("events")
+
+	n, err := eventsCol.CountDocuments(ctx, bson.M{"title": req.Title})
+	if err != nil {
+		http.Error(w, "Internal server error", http.StatusInternalServerError)
+		return
+	}
+	if n > 0 {
+		writeJSON(w, http.StatusConflict, map[string]string{"message": "event already exists"})
+		return
+	}
+
 	result, err := eventsCol.InsertOne(ctx, event)
 	if err != nil {
 		if mongo.IsDuplicateKeyError(err) {
