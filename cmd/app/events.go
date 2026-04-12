@@ -32,16 +32,17 @@ type createEventRequest struct {
 }
 
 type eventResponse struct {
-	ID          string        `json:"id"`
-	Title       string        `json:"title"`
-	Category    string        `json:"category"`
-	Price       uint64        `json:"price"`
-	Description string        `json:"description"`
-	Location    EventLocation `json:"location"`
-	CreatedAt   string        `json:"created_at"`
-	CreatedBy   string        `json:"created_by"`
-	StartedAt   string        `json:"started_at"`
-	FinishedAt  string        `json:"finished_at"`
+	ID          string           `json:"id"`
+	Title       string           `json:"title"`
+	Category    string           `json:"category"`
+	Price       uint64           `json:"price"`
+	Description string           `json:"description"`
+	Location    EventLocation    `json:"location"`
+	CreatedAt   string           `json:"created_at"`
+	CreatedBy   string           `json:"created_by"`
+	StartedAt   string           `json:"started_at"`
+	FinishedAt  string           `json:"finished_at"`
+	Reactions   *reactionCounts  `json:"reactions,omitempty"`
 }
 
 func eventToResponse(e Event) eventResponse {
@@ -75,22 +76,50 @@ func eventsRootHandler(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// GET/PATCH /events/{id}
+// GET/PATCH /events/{id}, POST /events/{id}/like, POST /events/{id}/dislike
 func eventsByIDHandler(w http.ResponseWriter, r *http.Request) {
-	id := strings.TrimPrefix(r.URL.Path, "/events/")
-	id = strings.Trim(id, "/")
-	if id == "" || strings.Contains(id, "/") {
+	rest := strings.TrimPrefix(r.URL.Path, "/events/")
+	rest = strings.Trim(rest, "/")
+	parts := strings.Split(rest, "/")
+	if len(parts) == 0 || parts[0] == "" {
 		http.NotFound(w, r)
 		return
 	}
-	switch r.Method {
-	case http.MethodGet:
-		getEventByIDHandler(w, r, id)
-	case http.MethodPatch:
-		patchEventHandler(w, r, id)
-	default:
-		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+	id := parts[0]
+
+	if len(parts) == 1 {
+		switch r.Method {
+		case http.MethodGet:
+			getEventByIDHandler(w, r, id)
+		case http.MethodPatch:
+			patchEventHandler(w, r, id)
+		default:
+			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		}
+		return
 	}
+
+	if len(parts) == 2 {
+		switch parts[1] {
+		case "like":
+			if r.Method != http.MethodPost {
+				http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+				return
+			}
+			postEventReactionHandler(w, r, id, 1, false)
+		case "dislike":
+			if r.Method != http.MethodPost {
+				http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+				return
+			}
+			postEventReactionHandler(w, r, id, -1, true)
+		default:
+			http.NotFound(w, r)
+		}
+		return
+	}
+
+	http.NotFound(w, r)
 }
 
 // POST /events — создание события (только для авторизованных)
@@ -206,7 +235,75 @@ func getEventByIDHandler(w http.ResponseWriter, r *http.Request, idStr string) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, eventToResponse(ev))
+	includeRx := queryIncludeReactions(r.URL.Query().Get("include"))
+	er := eventToResponse(ev)
+	if includeRx {
+		rc, err := getReactionsForTitle(ctx, ev.Title)
+		if err != nil {
+			http.Error(w, "Internal server error", http.StatusInternalServerError)
+			return
+		}
+		er.Reactions = &reactionCounts{Likes: rc.Likes, Dislikes: rc.Dislikes}
+	}
+
+	writeJSON(w, http.StatusOK, er)
+}
+
+func postEventReactionHandler(w http.ResponseWriter, r *http.Request, idStr string, value int8, clearCookieOn401 bool) {
+	ctx := r.Context()
+
+	cookie, err := r.Cookie(sessionCookieName)
+	if err != nil || !isValidSessionID(cookie.Value) {
+		if clearCookieOn401 {
+			clearSessionCookie(w)
+		}
+		w.WriteHeader(http.StatusUnauthorized)
+		return
+	}
+
+	userID, err := getSessionUserID(ctx, cookie.Value)
+	if err != nil {
+		http.Error(w, "Internal server error", http.StatusInternalServerError)
+		return
+	}
+	if userID == "" {
+		if clearCookieOn401 {
+			clearSessionCookie(w)
+		}
+		w.WriteHeader(http.StatusUnauthorized)
+		return
+	}
+
+	oid, err := primitive.ObjectIDFromHex(idStr)
+	if err != nil {
+		refreshExistingSession(ctx, w, r)
+		writeJSON(w, http.StatusNotFound, map[string]string{"message": "Event not found"})
+		return
+	}
+
+	var ev Event
+	err = mongoDB.Collection("events").FindOne(ctx, bson.M{"_id": oid}).Decode(&ev)
+	if err != nil {
+		if err == mongo.ErrNoDocuments {
+			refreshExistingSession(ctx, w, r)
+			writeJSON(w, http.StatusNotFound, map[string]string{"message": "Event not found"})
+			return
+		}
+		http.Error(w, "Internal server error", http.StatusInternalServerError)
+		return
+	}
+
+	if err := upsertEventReaction(ctx, ev.ID.Hex(), userID, value); err != nil {
+		http.Error(w, "Internal server error", http.StatusInternalServerError)
+		return
+	}
+	if err := refreshReactionsCacheForTitle(ctx, ev.Title); err != nil {
+		http.Error(w, "Internal server error", http.StatusInternalServerError)
+		return
+	}
+
+	refreshExistingSession(ctx, w, r)
+	w.WriteHeader(http.StatusNoContent)
 }
 
 func patchEventHandler(w http.ResponseWriter, r *http.Request, idStr string) {
@@ -386,6 +483,9 @@ func listEventsHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	includeRx := queryIncludeReactions(q.Get("include"))
+	titleRx := map[string]reactionCounts{}
+
 	resp := struct {
 		Events []eventResponse `json:"events"`
 		Count  int             `json:"count"`
@@ -394,7 +494,21 @@ func listEventsHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	for _, e := range events {
-		resp.Events = append(resp.Events, eventToResponse(e))
+		er := eventToResponse(e)
+		if includeRx {
+			rc, ok := titleRx[e.Title]
+			if !ok {
+				var err error
+				rc, err = getReactionsForTitle(ctx, e.Title)
+				if err != nil {
+					http.Error(w, "Internal server error", http.StatusInternalServerError)
+					return
+				}
+				titleRx[e.Title] = rc
+			}
+			er.Reactions = &reactionCounts{Likes: rc.Likes, Dislikes: rc.Dislikes}
+		}
+		resp.Events = append(resp.Events, er)
 	}
 	resp.Count = len(resp.Events)
 
