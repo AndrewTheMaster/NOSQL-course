@@ -91,7 +91,7 @@ func aggregateReactionsFromCassandra(ctx context.Context, title string) (reactio
 		).WithContext(ctx).Consistency(cassConsistency)
 
 		iter := q.Iter()
-		var lv int8
+		var lv int
 		for iter.Scan(&lv) {
 			hasRows = true
 			switch lv {
@@ -124,7 +124,7 @@ func refreshReactionsCacheForTitle(ctx context.Context, title string) error {
 	return err
 }
 
-func upsertEventReaction(ctx context.Context, eventID, userID string, value int8) error {
+func upsertEventReaction(ctx context.Context, eventID, userID string, value int) error {
 	now := time.Now().UTC()
 	return cassSession.Query(
 		`INSERT INTO event_reactions (event_id, created_by, like_value, created_at) VALUES (?, ?, ?, ?)`,

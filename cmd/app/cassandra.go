@@ -12,8 +12,8 @@ import (
 )
 
 var (
-	cassSession      *gocql.Session
-	cassConsistency  gocql.Consistency
+	cassSession     *gocql.Session
+	cassConsistency gocql.Consistency
 )
 
 func initCassandra(ctx context.Context) error {
@@ -73,11 +73,13 @@ func initCassandra(ctx context.Context) error {
 		return fmt.Errorf("cassandra session: %w", err)
 	}
 
+	_ = cassSession.Query(`DROP TABLE IF EXISTS event_reactions`).WithContext(ctx).Exec()
+
 	err = cassSession.Query(`
-CREATE TABLE IF NOT EXISTS event_reactions (
+CREATE TABLE event_reactions (
 	event_id text,
 	created_by text,
-	like_value tinyint,
+	like_value int,
 	created_at timestamp,
 	PRIMARY KEY (event_id, created_by)
 )`).WithContext(ctx).Exec()

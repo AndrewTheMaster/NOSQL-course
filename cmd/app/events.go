@@ -32,17 +32,17 @@ type createEventRequest struct {
 }
 
 type eventResponse struct {
-	ID          string           `json:"id"`
-	Title       string           `json:"title"`
-	Category    string           `json:"category"`
-	Price       uint64           `json:"price"`
-	Description string           `json:"description"`
-	Location    EventLocation    `json:"location"`
-	CreatedAt   string           `json:"created_at"`
-	CreatedBy   string           `json:"created_by"`
-	StartedAt   string           `json:"started_at"`
-	FinishedAt  string           `json:"finished_at"`
-	Reactions   *reactionCounts  `json:"reactions,omitempty"`
+	ID          string          `json:"id"`
+	Title       string          `json:"title"`
+	Category    string          `json:"category"`
+	Price       uint64          `json:"price"`
+	Description string          `json:"description"`
+	Location    EventLocation   `json:"location"`
+	CreatedAt   string          `json:"created_at"`
+	CreatedBy   string          `json:"created_by"`
+	StartedAt   string          `json:"started_at"`
+	FinishedAt  string          `json:"finished_at"`
+	Reactions   *reactionCounts `json:"reactions,omitempty"`
 }
 
 func eventToResponse(e Event) eventResponse {
@@ -249,7 +249,7 @@ func getEventByIDHandler(w http.ResponseWriter, r *http.Request, idStr string) {
 	writeJSON(w, http.StatusOK, er)
 }
 
-func postEventReactionHandler(w http.ResponseWriter, r *http.Request, idStr string, value int8, clearCookieOn401 bool) {
+func postEventReactionHandler(w http.ResponseWriter, r *http.Request, idStr string, value int, clearCookieOn401 bool) {
 	ctx := r.Context()
 
 	cookie, err := r.Cookie(sessionCookieName)
