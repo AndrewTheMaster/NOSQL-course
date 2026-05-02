@@ -73,6 +73,16 @@ func main() {
 		log.Fatalf("failed to ensure MongoDB indexes: %v", err)
 	}
 
+	likeTTL, err := strconv.Atoi(mustGetenv("APP_LIKE_TTL"))
+	if err != nil || likeTTL <= 0 {
+		log.Fatalf("invalid APP_LIKE_TTL")
+	}
+	likeTTLSeconds = likeTTL
+
+	if err := initCassandra(context.Background()); err != nil {
+		log.Fatalf("failed to init Cassandra: %v", err)
+	}
+
 	// Routes
 	http.HandleFunc("/health", healthHandler)
 	http.HandleFunc("/session", sessionHandler)

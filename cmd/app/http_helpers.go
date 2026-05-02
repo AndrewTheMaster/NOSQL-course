@@ -25,6 +25,16 @@ func touchSessionCookie(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+func clearSessionCookie(w http.ResponseWriter) {
+	http.SetCookie(w, &http.Cookie{
+		Name:     sessionCookieName,
+		Value:    "",
+		Path:     "/",
+		HttpOnly: true,
+		MaxAge:   0,
+	})
+}
+
 func decodeJSONMap(r *http.Request) (map[string]json.RawMessage, error) {
 	var m map[string]json.RawMessage
 	if err := json.NewDecoder(r.Body).Decode(&m); err != nil {
