@@ -34,12 +34,12 @@ func initCassandra(ctx context.Context) error {
 	user := os.Getenv("CASSANDRA_USERNAME")
 	pass := os.Getenv("CASSANDRA_PASSWORD")
 
-	cluster := gocql.NewCluster(hosts...)
-	if p, err := strconv.Atoi(port); err == nil && p > 0 {
-		cluster.Port = p
-	} else {
-		cluster.Port = 9042
+	p, err := strconv.Atoi(port)
+	if err != nil || p <= 0 {
+		log.Fatalf("invalid CASSANDRA_PORT: must be a positive integer, got %q", port)
 	}
+	cluster := gocql.NewCluster(hosts...)
+	cluster.Port = p
 	cluster.Keyspace = "system"
 	if user != "" {
 		cluster.Authenticator = gocql.PasswordAuthenticator{
