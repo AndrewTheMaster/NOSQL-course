@@ -15,8 +15,8 @@ services:
         condition: service_healthy
       mongo-shard-setup:
         condition: service_completed_successfully
-      cassandra:
-        condition: service_healthy
+      cassandra-init:
+        condition: service_completed_successfully
     networks:
       - app_network
 
@@ -36,6 +36,22 @@ services:
       timeout: 10s
       retries: 15
       start_period: 60s
+    networks:
+      - app_network
+
+  cassandra-init:
+    image: cassandra:4.1
+    container_name: cassandra-init
+    depends_on:
+      cassandra:
+        condition: service_healthy
+    env_file: .env.local
+    environment:
+      CASSANDRA_HOST: cassandra
+    volumes:
+      - ./scripts/cassandra-init.sh:/scripts/cassandra-init.sh:ro,z
+      - ./scripts/cassandra/init.cql:/scripts/cassandra/init.cql:ro,z
+    entrypoint: ["/bin/bash", "/scripts/cassandra-init.sh"]
     networks:
       - app_network
 
@@ -129,7 +145,7 @@ services:
       - shard2-2
       - shard2-3
     volumes:
-      - ./scripts/mongo-rs-init.sh:/scripts/mongo-rs-init.sh:ro
+      - ./scripts/mongo-rs-init.sh:/scripts/mongo-rs-init.sh:ro,z
     entrypoint: ["/bin/bash", "/scripts/mongo-rs-init.sh"]
     networks:
       - app_network
@@ -159,7 +175,7 @@ services:
       mongodb:
         condition: service_healthy
     volumes:
-      - ./scripts/mongo-shard-setup.sh:/scripts/mongo-shard-setup.sh:ro
+      - ./scripts/mongo-shard-setup.sh:/scripts/mongo-shard-setup.sh:ro,z
     entrypoint: ["/bin/bash", "/scripts/mongo-shard-setup.sh"]
     networks:
       - app_network

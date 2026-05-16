@@ -79,7 +79,7 @@ func main() {
 	}
 	likeTTLSeconds = likeTTL
 
-	if err := initCassandra(context.Background()); err != nil {
+	if err := initCassandra(); err != nil {
 		log.Fatalf("failed to init Cassandra: %v", err)
 	}
 
