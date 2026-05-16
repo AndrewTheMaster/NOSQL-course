@@ -43,6 +43,7 @@ type eventResponse struct {
 	StartedAt   string          `json:"started_at"`
 	FinishedAt  string          `json:"finished_at"`
 	Reactions   *reactionCounts `json:"reactions,omitempty"`
+	Reviews     *reviewSummary  `json:"reviews,omitempty"`
 }
 
 func eventToResponse(e Event) eventResponse {
@@ -76,7 +77,7 @@ func eventsRootHandler(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// GET/PATCH /events/{id}, POST /events/{id}/like, POST /events/{id}/dislike
+// GET/PATCH /events/{id}, like/dislike, reviews
 func eventsByIDHandler(w http.ResponseWriter, r *http.Request) {
 	rest := strings.TrimPrefix(r.URL.Path, "/events/")
 	rest = strings.Trim(rest, "/")
@@ -113,9 +114,27 @@ func eventsByIDHandler(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 			postEventReactionHandler(w, r, id, -1, true)
+		case "reviews":
+			switch r.Method {
+			case http.MethodGet:
+				listEventReviewsHandler(w, r, id)
+			case http.MethodPost:
+				createEventReviewHandler(w, r, id)
+			default:
+				http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+			}
 		default:
 			http.NotFound(w, r)
 		}
+		return
+	}
+
+	if len(parts) == 3 && parts[1] == "reviews" {
+		if r.Method == http.MethodPatch {
+			patchEventReviewHandler(w, r, id, parts[2])
+			return
+		}
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
 
@@ -235,18 +254,32 @@ func getEventByIDHandler(w http.ResponseWriter, r *http.Request, idStr string) {
 		return
 	}
 
-	includeRx := queryIncludeReactions(r.URL.Query().Get("include"))
+	includeParam := r.URL.Query().Get("include")
 	er := eventToResponse(ev)
-	if includeRx {
-		rc, err := getReactionsForTitle(ctx, ev.Title)
-		if err != nil {
-			http.Error(w, "Internal server error", http.StatusInternalServerError)
-			return
-		}
-		er.Reactions = &reactionCounts{Likes: rc.Likes, Dislikes: rc.Dislikes}
+	if err := attachEventIncludes(ctx, &er, ev.Title, includeParam); err != nil {
+		http.Error(w, "Internal server error", http.StatusInternalServerError)
+		return
 	}
 
 	writeJSON(w, http.StatusOK, er)
+}
+
+func attachEventIncludes(ctx context.Context, er *eventResponse, title, includeParam string) error {
+	if queryIncludeReactions(includeParam) {
+		rc, err := getReactionsForTitle(ctx, title)
+		if err != nil {
+			return err
+		}
+		er.Reactions = &reactionCounts{Likes: rc.Likes, Dislikes: rc.Dislikes}
+	}
+	if queryIncludeReviews(includeParam) {
+		rs, err := getReviewsForTitle(ctx, title)
+		if err != nil {
+			return err
+		}
+		er.Reviews = &reviewSummary{Count: rs.Count, Rating: rs.Rating}
+	}
+	return nil
 }
 
 func postEventReactionHandler(w http.ResponseWriter, r *http.Request, idStr string, value int8, clearCookieOn401 bool) {
@@ -483,8 +516,11 @@ func listEventsHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	includeRx := queryIncludeReactions(q.Get("include"))
+	includeParam := q.Get("include")
+	includeRx := queryIncludeReactions(includeParam)
+	includeRv := queryIncludeReviews(includeParam)
 	titleRx := map[string]reactionCounts{}
+	titleRv := map[string]reviewSummary{}
 
 	resp := struct {
 		Events []eventResponse `json:"events"`
@@ -507,6 +543,19 @@ func listEventsHandler(w http.ResponseWriter, r *http.Request) {
 				titleRx[e.Title] = rc
 			}
 			er.Reactions = &reactionCounts{Likes: rc.Likes, Dislikes: rc.Dislikes}
+		}
+		if includeRv {
+			rs, ok := titleRv[e.Title]
+			if !ok {
+				var err error
+				rs, err = getReviewsForTitle(ctx, e.Title)
+				if err != nil {
+					http.Error(w, "Internal server error", http.StatusInternalServerError)
+					return
+				}
+				titleRv[e.Title] = rs
+			}
+			er.Reviews = &reviewSummary{Count: rs.Count, Rating: rs.Rating}
 		}
 		resp.Events = append(resp.Events, er)
 	}

@@ -278,8 +278,11 @@ func listUserEventsHandler(w http.ResponseWriter, r *http.Request, userIDStr str
 		return
 	}
 
-	includeRx := queryIncludeReactions(q.Get("include"))
+	includeParam := q.Get("include")
+	includeRx := queryIncludeReactions(includeParam)
+	includeRv := queryIncludeReviews(includeParam)
 	titleRx := map[string]reactionCounts{}
+	titleRv := map[string]reviewSummary{}
 
 	resp := struct {
 		Events []eventResponse `json:"events"`
@@ -300,6 +303,19 @@ func listUserEventsHandler(w http.ResponseWriter, r *http.Request, userIDStr str
 				titleRx[e.Title] = rc
 			}
 			er.Reactions = &reactionCounts{Likes: rc.Likes, Dislikes: rc.Dislikes}
+		}
+		if includeRv {
+			rs, ok := titleRv[e.Title]
+			if !ok {
+				var err error
+				rs, err = getReviewsForTitle(ctx, e.Title)
+				if err != nil {
+					http.Error(w, "Internal server error", http.StatusInternalServerError)
+					return
+				}
+				titleRv[e.Title] = rs
+			}
+			er.Reviews = &reviewSummary{Count: rs.Count, Rating: rs.Rating}
 		}
 		resp.Events = append(resp.Events, er)
 	}

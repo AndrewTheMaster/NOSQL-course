@@ -79,6 +79,12 @@ func main() {
 	}
 	likeTTLSeconds = likeTTL
 
+	reviewsTTL, err := strconv.Atoi(mustGetenv("APP_EVENT_REVIEWS_TTL"))
+	if err != nil || reviewsTTL <= 0 {
+		log.Fatalf("invalid APP_EVENT_REVIEWS_TTL")
+	}
+	eventReviewsTTLSeconds = reviewsTTL
+
 	if err := initCassandra(); err != nil {
 		log.Fatalf("failed to init Cassandra: %v", err)
 	}
