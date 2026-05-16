@@ -5,7 +5,6 @@ import (
 	"crypto/md5"
 	"encoding/hex"
 	"encoding/json"
-	"errors"
 	"math"
 	"net/http"
 	"strconv"
@@ -14,7 +13,6 @@ import (
 	"unicode/utf8"
 
 	"github.com/gocql/gocql"
-	"github.com/redis/go-redis/v9"
 	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/bson/primitive"
 	"go.mongodb.org/mongo-driver/mongo"
@@ -43,9 +41,25 @@ type createReviewRequest struct {
 	Rating  int    `json:"rating"`
 }
 
+// Ключ Redis как в автогрейдере ndbx: event:{md5(title)}:reviews (HASH: count, rating).
 func redisEventReviewsKey(title string) string {
 	h := md5.Sum([]byte(title))
 	return "event:" + hex.EncodeToString(h[:]) + ":reviews"
+}
+
+func formatRatingRedis(r float64) string {
+	return strconv.FormatFloat(roundRating1(r), 'f', 1, 64)
+}
+
+func writeReviewsCache(ctx context.Context, key string, summary reviewSummary) error {
+	pipe := redisClient.TxPipeline()
+	pipe.HSet(ctx, key,
+		"count", strconv.Itoa(summary.Count),
+		"rating", formatRatingRedis(summary.Rating),
+	)
+	pipe.Expire(ctx, key, time.Duration(eventReviewsTTLSeconds)*time.Second)
+	_, err := pipe.Exec(ctx)
+	return err
 }
 
 func queryIncludeReviews(include string) bool {
@@ -65,26 +79,21 @@ func roundRating1(v float64) float64 {
 	return math.Round(v*10) / 10
 }
 
-func (r reviewSummary) toRedisValue() (string, error) {
-	b, err := json.Marshal(r)
-	return string(b), err
-}
-
-func parseReviewSummaryFromRedis(s string) (reviewSummary, error) {
-	var rs reviewSummary
-	err := json.Unmarshal([]byte(s), &rs)
-	return rs, err
-}
-
 func getReviewsForTitle(ctx context.Context, title string) (reviewSummary, error) {
 	key := redisEventReviewsKey(title)
 
-	val, err := redisClient.Get(ctx, key).Result()
-	if err == nil {
-		return parseReviewSummaryFromRedis(val)
-	}
-	if err != nil && !errors.Is(err, redis.Nil) {
+	n, err := redisClient.Exists(ctx, key).Result()
+	if err != nil {
 		return reviewSummary{}, err
+	}
+	if n == 1 {
+		vals, err := redisClient.HGetAll(ctx, key).Result()
+		if err != nil {
+			return reviewSummary{}, err
+		}
+		count, _ := strconv.Atoi(vals["count"])
+		rating, _ := strconv.ParseFloat(vals["rating"], 64)
+		return reviewSummary{Count: count, Rating: rating}, nil
 	}
 
 	summary, hasRows, err := aggregateReviewsFromCassandra(ctx, title)
@@ -92,12 +101,8 @@ func getReviewsForTitle(ctx context.Context, title string) (reviewSummary, error
 		return reviewSummary{}, err
 	}
 
-	if hasRows {
-		payload, err := summary.toRedisValue()
-		if err != nil {
-			return reviewSummary{}, err
-		}
-		if err := redisClient.Set(ctx, key, payload, time.Duration(eventReviewsTTLSeconds)*time.Second).Err(); err != nil {
+	if hasRows && summary.Count > 0 {
+		if err := writeReviewsCache(ctx, key, summary); err != nil {
 			return reviewSummary{}, err
 		}
 	}
@@ -157,11 +162,7 @@ func refreshReviewsCacheForTitle(ctx context.Context, title string) error {
 	if !hasRows || summary.Count == 0 {
 		return redisClient.Del(ctx, key).Err()
 	}
-	payload, err := summary.toRedisValue()
-	if err != nil {
-		return err
-	}
-	return redisClient.Set(ctx, key, payload, time.Duration(eventReviewsTTLSeconds)*time.Second).Err()
+	return writeReviewsCache(ctx, key, summary)
 }
 
 func findEventByID(ctx context.Context, idStr string) (Event, error) {
