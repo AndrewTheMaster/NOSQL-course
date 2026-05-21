@@ -278,13 +278,30 @@ func listUserEventsHandler(w http.ResponseWriter, r *http.Request, userIDStr str
 		return
 	}
 
+	includeRx := queryIncludeReactions(q.Get("include"))
+	titleRx := map[string]reactionCounts{}
+
 	resp := struct {
 		Events []eventResponse `json:"events"`
 		Count  int             `json:"count"`
 	}{Events: make([]eventResponse, 0, len(events))}
 
 	for _, e := range events {
-		resp.Events = append(resp.Events, eventToResponse(e))
+		er := eventToResponse(e)
+		if includeRx {
+			rc, ok := titleRx[e.Title]
+			if !ok {
+				var err error
+				rc, err = getReactionsForTitle(ctx, e.Title)
+				if err != nil {
+					http.Error(w, "Internal server error", http.StatusInternalServerError)
+					return
+				}
+				titleRx[e.Title] = rc
+			}
+			er.Reactions = &reactionCounts{Likes: rc.Likes, Dislikes: rc.Dislikes}
+		}
+		resp.Events = append(resp.Events, er)
 	}
 	resp.Count = len(resp.Events)
 
