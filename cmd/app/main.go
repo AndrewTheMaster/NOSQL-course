@@ -89,6 +89,16 @@ func main() {
 		log.Fatalf("failed to init Cassandra: %v", err)
 	}
 
+	recommendationsTTL, err := strconv.Atoi(mustGetenv("APP_RECOMMENDATIONS_TTL"))
+	if err != nil || recommendationsTTL <= 0 {
+		log.Fatalf("invalid APP_RECOMMENDATIONS_TTL")
+	}
+	recommendationsTTLSeconds = recommendationsTTL
+
+	if err := initNeo4j(); err != nil {
+		log.Fatalf("failed to init Neo4j: %v", err)
+	}
+
 	// Routes
 	http.HandleFunc("/health", healthHandler)
 	http.HandleFunc("/session", sessionHandler)
@@ -98,6 +108,7 @@ func main() {
 	http.HandleFunc("/auth/logout", authLogoutHandler)
 	http.HandleFunc("/events/", eventsByIDHandler)
 	http.HandleFunc("/events", eventsRootHandler)
+	http.HandleFunc("/recommendations", recommendationsHandler)
 
 	addr := ":" + port
 	log.Printf("Server starting on %s", addr)

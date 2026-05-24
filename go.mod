@@ -4,6 +4,7 @@ go 1.25.1
 
 require (
 	github.com/gocql/gocql v1.7.0
+	github.com/neo4j/neo4j-go-driver/v5 v5.28.4
 	github.com/redis/go-redis/v9 v9.18.0
 	go.mongodb.org/mongo-driver v1.17.9
 	golang.org/x/crypto v0.49.0

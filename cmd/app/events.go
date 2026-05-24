@@ -230,6 +230,10 @@ func createEventHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	eventID := result.InsertedID.(primitive.ObjectID).Hex()
+	if err := ensureNeo4jEvent(ctx, eventID, req.Title); err != nil {
+		http.Error(w, "Internal server error", http.StatusInternalServerError)
+		return
+	}
 	writeJSON(w, http.StatusCreated, map[string]string{"id": eventID})
 }
 
@@ -329,6 +333,12 @@ func postEventReactionHandler(w http.ResponseWriter, r *http.Request, idStr stri
 	if err := upsertEventReaction(ctx, ev.ID.Hex(), userID, value); err != nil {
 		http.Error(w, "Internal server error", http.StatusInternalServerError)
 		return
+	}
+	if value == 1 {
+		if err := addNeo4jLike(ctx, userID, ev.ID.Hex(), ev.Title); err != nil {
+			http.Error(w, "Internal server error", http.StatusInternalServerError)
+			return
+		}
 	}
 	if err := refreshReactionsCacheForTitle(ctx, ev.Title); err != nil {
 		http.Error(w, "Internal server error", http.StatusInternalServerError)

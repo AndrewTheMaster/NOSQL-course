@@ -1,0 +1,301 @@
+{
+  "info": {
+    "name": "EventHub API",
+    "description": "Коллекция запросов для курса NoSQL (лабы 1–7).\n\nПеред использованием: `make run`, переменная `baseUrl` = http://localhost:8080.\nВ Postman включите автоматическое сохранение cookies (Settings → Cookies).",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    { "key": "baseUrl", "value": "http://localhost:8080" },
+    { "key": "eventId", "value": "" },
+    { "key": "userId", "value": "" },
+    { "key": "reviewId", "value": "" }
+  ],
+  "item": [
+    {
+      "name": "Lab 1 — Health",
+      "item": [
+        {
+          "name": "GET /health",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/health"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Lab 2 — Session",
+      "item": [
+        {
+          "name": "POST /session (create or refresh)",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": "{{baseUrl}}/session"
+          }
+        },
+        {
+          "name": "GET /health (with session cookie, no TTL refresh)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/health"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Lab 3 — Users & Auth",
+      "item": [
+        {
+          "name": "POST /users (sign up)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Created', function () { pm.response.to.have.status(201); });"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"full_name\": \"Иван Иванов\",\n  \"username\": \"ivan\",\n  \"password\": \"secret123\"\n}"
+            },
+            "url": "{{baseUrl}}/users"
+          }
+        },
+        {
+          "name": "GET /users",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/users?limit=10&offset=0",
+              "host": ["{{baseUrl}}"],
+              "path": ["users"],
+              "query": [
+                { "key": "limit", "value": "10" },
+                { "key": "offset", "value": "0" }
+              ]
+            }
+          }
+        },
+        {
+          "name": "GET /users/{id}",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/users/{{userId}}"
+          }
+        },
+        {
+          "name": "POST /auth/login",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"username\": \"ivan\",\n  \"password\": \"secret123\"\n}"
+            },
+            "url": "{{baseUrl}}/auth/login"
+          }
+        },
+        {
+          "name": "POST /auth/logout",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": "{{baseUrl}}/auth/logout"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Lab 4 — Events (PATCH)",
+      "item": [
+        {
+          "name": "PATCH /events/{id} (organizer)",
+          "request": {
+            "method": "PATCH",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"category\": \"concert\",\n  \"price\": 500,\n  \"city\": \"Москва\"\n}"
+            },
+            "url": "{{baseUrl}}/events/{{eventId}}"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Lab 3 — Events",
+      "item": [
+        {
+          "name": "POST /events",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "if (pm.response.code === 201) {",
+                  "  var j = pm.response.json();",
+                  "  if (j.id) pm.collectionVariables.set('eventId', j.id);",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"title\": \"Концерт в парке\",\n  \"address\": \"г. Москва, парк Горького\",\n  \"description\": \"Летний концерт\",\n  \"started_at\": \"2026-06-01T18:00:00+03:00\",\n  \"finished_at\": \"2026-06-01T21:00:00+03:00\"\n}"
+            },
+            "url": "{{baseUrl}}/events"
+          }
+        },
+        {
+          "name": "GET /events",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/events?limit=20&include=reactions,reviews",
+              "host": ["{{baseUrl}}"],
+              "path": ["events"],
+              "query": [
+                { "key": "limit", "value": "20" },
+                { "key": "include", "value": "reactions,reviews" }
+              ]
+            }
+          }
+        },
+        {
+          "name": "GET /events/{id}",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/events/{{eventId}}?include=reactions,reviews",
+              "host": ["{{baseUrl}}"],
+              "path": ["events", "{{eventId}}"],
+              "query": [{ "key": "include", "value": "reactions,reviews" }]
+            }
+          }
+        },
+        {
+          "name": "GET /users/{id}/events",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/users/{{userId}}/events"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Lab 5 — Reactions",
+      "item": [
+        {
+          "name": "POST /events/{id}/like",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": "{{baseUrl}}/events/{{eventId}}/like"
+          }
+        },
+        {
+          "name": "POST /events/{id}/dislike",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": "{{baseUrl}}/events/{{eventId}}/dislike"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Lab 6 — Reviews",
+      "item": [
+        {
+          "name": "POST /events/{id}/reviews",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "if (pm.response.code === 201) {",
+                  "  var j = pm.response.json();",
+                  "  if (j.id) pm.collectionVariables.set('reviewId', j.id);",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"comment\": \"Отличное мероприятие!\",\n  \"rating\": 5\n}"
+            },
+            "url": "{{baseUrl}}/events/{{eventId}}/reviews"
+          }
+        },
+        {
+          "name": "GET /events/{id}/reviews",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/events/{{eventId}}/reviews"
+          }
+        },
+        {
+          "name": "PATCH /events/{id}/reviews/{review_id}",
+          "request": {
+            "method": "PATCH",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"comment\": \"Обновлённый комментарий\",\n  \"rating\": 4\n}"
+            },
+            "url": "{{baseUrl}}/events/{{eventId}}/reviews/{{reviewId}}"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Lab 7 — Recommendations",
+      "item": [
+        {
+          "name": "GET /recommendations",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/recommendations",
+            "description": "Требуется авторизованная сессия (POST /auth/login). Ответ: {\"events\": [...]}."
+          }
+        },
+        {
+          "name": "GET /recommendations (unauthorized)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/recommendations",
+            "description": "Без cookie — ожидается 401. Выполняйте в отдельной вкладке без cookies."
+          }
+        }
+      ]
+    }
+  ]
+}

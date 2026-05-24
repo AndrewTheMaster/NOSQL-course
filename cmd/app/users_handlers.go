@@ -108,6 +108,11 @@ func createUserHandler(w http.ResponseWriter, r *http.Request) {
 
 	userID := result.InsertedID.(primitive.ObjectID).Hex()
 
+	if err := ensureNeo4jUser(ctx, userID); err != nil {
+		http.Error(w, "Internal server error", http.StatusInternalServerError)
+		return
+	}
+
 	sid, err := createNewSessionWithUserID(ctx, userID)
 	if err != nil {
 		http.Error(w, "Internal server error", http.StatusInternalServerError)
