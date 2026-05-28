@@ -17,6 +17,8 @@ services:
         condition: service_completed_successfully
       cassandra-init:
         condition: service_completed_successfully
+      neo4j:
+        condition: service_healthy
     networks:
       - app_network
 
@@ -52,6 +54,23 @@ services:
       - ./scripts/cassandra-init.sh:/scripts/cassandra-init.sh:ro,z
       - ./scripts/cassandra/init.cql:/scripts/cassandra/init.cql:ro,z
     entrypoint: ["/bin/bash", "/scripts/cassandra-init.sh"]
+    networks:
+      - app_network
+
+  neo4j:
+    image: neo4j:5
+    container_name: neo4j
+    restart: unless-stopped
+    environment:
+      NEO4J_AUTH: ${NEO4J_USER}/${NEO4J_PASSWORD}
+    ports:
+      - "${NEO4J_BOLT_PORT}:7687"
+    healthcheck:
+      test: ["CMD-SHELL", "cypher-shell -u ${NEO4J_USER} -p ${NEO4J_PASSWORD} 'RETURN 1' || exit 1"]
+      interval: 10s
+      timeout: 10s
+      retries: 10
+      start_period: 30s
     networks:
       - app_network
 
