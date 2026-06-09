@@ -471,25 +471,3 @@ go build -o bin/app ./cmd/app
 go build -o /dev/null ./cmd/app
 ```
 
-## FAQ
-
-**Q: Почему несколько баз данных?**  
-A: Каждая СУБД решает свою задачу: Redis — быстрые сессии и кэш; MongoDB — гибкая схема событий; Cassandra — высокая запись реакций и отзывов; Neo4j — обход графа для рекомендаций.
-
-**Q: Как работает авторизация?**  
-A: Stateless HTTP + server-side сессия в Redis. Cookie `X-Session-Id` привязывается к `user_id` после регистрации или `POST /auth/login`.
-
-**Q: Почему лайки считаются по названию события, а не по id?**  
-A: В доменной модели несколько сеансов одного мероприятия могут иметь одинаковый `title`; реакции и отзывы агрегируются по названию.
-
-**Q: Влияет ли дизлайк на рекомендации?**  
-A: Нет. В Neo4j связь `LIKED` создаётся при лайке и не удаляется при дизлайке.
-
-**Q: Как сбросить все данные?**  
-A: `make clean` — удаляет volumes Docker (MongoDB, Cassandra, Neo4j, Redis).
-
-**Q: Сервис не стартует с первого раза?**  
-A: Дождитесь healthcheck всех зависимостей (`make services`). MongoDB и Cassandra инициализируются дольше всего. Логи: `make logs`.
-
-**Q: Где Postman-коллекция?**  
-A: [api/eventhub.postman_collection.json](api/eventhub.postman_collection.json).
