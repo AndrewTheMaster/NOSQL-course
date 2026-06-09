@@ -7,6 +7,8 @@ Postman Collection v2.1 для ручного тестирования HTTP API.
 | Файл | Описание |
 |------|----------|
 | [eventhub.postman_collection.json](eventhub.postman_collection.json) | все эндпоинты, сгруппированные по лабам |
+| [../db/schema.dbml](../db/schema.dbml) | схема БД (DBML) |
+| [../img/schema.png](../img/schema.png) | схема БД (PNG для README) |
 
 ## Импорт
 

@@ -132,7 +132,11 @@ flowchart TB
 - User **оставляет** Review на Event → Cassandra `event_reviews`
 - Рекомендации строятся по графу Neo4j, полные данные Event подгружаются из MongoDB
 
-Логическая схема хранилищ (DBML): [docs/db/schema.dbml](docs/db/schema.dbml) — можно открыть на [dbdiagram.io](https://dbdiagram.io).
+### Схема баз данных
+
+![Схема баз данных EventHub](docs/img/schema.png)
+
+Исходник для редактирования: [docs/db/schema.dbml](docs/db/schema.dbml) (импорт на [dbdiagram.io](https://dbdiagram.io)).
 
 ## Функциональные требования
 
