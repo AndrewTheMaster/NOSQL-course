@@ -1,0 +1,103 @@
+// EventHub — логическая схема данных
+// Просмотр: https://dbdiagram.io (импорт DBML) или расширение DBML в VS Code
+
+Project eventhub {
+  database_type: 'Multi-DB'
+  Note: 'MongoDB — основные сущности; Cassandra — реакции и отзывы; Redis/Neo4j — кэш и граф'
+}
+
+// --- MongoDB ---
+
+Table users {
+  _id objectid [pk, note: 'MongoDB ObjectId']
+  full_name varchar
+  username varchar [unique]
+  password_hash varchar
+}
+
+Table events {
+  _id objectid [pk]
+  title varchar
+  description text
+  category varchar [note: 'meetup|concert|exhibition|party|other']
+  price uint64
+  location_city varchar
+  location_address varchar
+  created_at varchar [note: 'RFC3339']
+  created_by varchar [ref: > users._id]
+  started_at varchar
+  finished_at varchar
+}
+
+// --- Cassandra ---
+
+Table event_reactions {
+  event_id text [pk]
+  created_by text [pk, ref: > users._id]
+  like_value tinyint [note: '1 = like, -1 = dislike']
+  created_at timestamp
+}
+
+Table event_reviews {
+  event_id text [pk]
+  created_by text [pk, ref: > users._id]
+  id uuid
+  rating tinyint [note: '1..5']
+  comment text
+  created_at timestamp
+  updated_at timestamp
+}
+
+Table event_reviews_timeline {
+  event_id text [pk]
+  created_at timestamp [pk]
+  id uuid [pk]
+  rating tinyint
+  comment text
+  created_by text
+  updated_at timestamp
+  Note: 'CLUSTERING ORDER BY (created_at DESC)'
+}
+
+// --- Neo4j (граф, не реляционная таблица) ---
+
+Table neo4j_user {
+  id varchar [pk, note: 'User node, id = MongoDB user id']
+}
+
+Table neo4j_event {
+  id varchar [pk, note: 'Event node']
+  title varchar
+}
+
+Table neo4j_liked {
+  user_id varchar [ref: > neo4j_user.id]
+  event_id varchar [ref: > neo4j_event.id]
+  Note: 'Relationship LIKED; создаётся при like, не удаляется при dislike'
+}
+
+// --- Redis (ключи, не таблицы) ---
+
+Table redis_sessions {
+  key varchar [pk, note: 'sid:{session_id} HASH']
+  created_at varchar
+  updated_at varchar
+  user_id varchar
+}
+
+Table redis_reactions_cache {
+  key varchar [pk, note: 'event:{md5(title)}:reactions HASH']
+  likes int
+  dislikes int
+}
+
+Table redis_reviews_cache {
+  key varchar [pk, note: 'event:{md5(title)}:reviews HASH']
+  count int
+  rating float
+}
+
+Table redis_recommendations_cache {
+  key varchar [pk, note: 'user:{user_id}:recomms HASH']
+  events json [note: 'поле events — JSON-массив eventResponse']
+}
