@@ -71,34 +71,39 @@ Backend-сервис платформы мероприятий: регистра
 
 ```mermaid
 flowchart TB
-    Client([HTTP Client]) --> App[Go App :8080]
+    Client([HTTP Client]) --> App[Go App]
 
-    App --> Redis[(Redis)]
-    App --> Mongo[(MongoDB mongos)]
-    App --> Cass[(Cassandra)]
-    App --> Neo4j[(Neo4j)]
+    App --> RedisNode[(Redis)]
+    App --> MongoNode[(MongoDB)]
+    App --> CassNode[(Cassandra)]
+    App --> Neo4jNode[(Neo4j)]
 
-    subgraph Redis
-        R1[sid:* — сессии]
-        R2[event:*:reactions — кэш лайков]
-        R3[event:*:reviews — кэш отзывов]
-        R4[user:*:recomms — кэш рекомендаций]
+    subgraph redis_store [Redis]
+        R1[sid sessions]
+        R2[reactions cache]
+        R3[reviews cache]
+        R4[recommendations cache]
     end
 
-    subgraph MongoDB
-        M1[(users)]
-        M2[(events)]
+    subgraph mongo_store [MongoDB]
+        M1[users]
+        M2[events]
     end
 
-    subgraph Cassandra
+    subgraph cassandra_store [Cassandra]
         C1[event_reactions]
         C2[event_reviews]
         C3[event_reviews_timeline]
     end
 
-    subgraph Neo4j
-        N1[User]-[:LIKED]->N2[Event]
+    subgraph neo4j_store [Neo4j]
+        N1[User] -->|LIKED| N2[Event]
     end
+
+    RedisNode --- redis_store
+    MongoNode --- mongo_store
+    CassNode --- cassandra_store
+    Neo4jNode --- neo4j_store
 ```
 
 ### Основные сущности
